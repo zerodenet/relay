@@ -1,0 +1,204 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build & Publish Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify tag is on main
+        run: |
+          git fetch origin main
+          if ! git merge-base --is-ancestor HEAD origin/main; then
+            echo "::error::Tag ${{ github.ref_name }} is not on main branch"
+            exit 1
+          fi
+
+      - name: Detect pre-release
+        id: prerelease
+        run: |
+          TAG="${{ github.ref_name }}"
+          if [[ "$TAG" =~ -(rc|beta|alpha|pre|dev)(\.|$|-) ]]; then
+            echo "is_prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Build
+        run: pnpm build
+
+      - name: Package release tarball
+        run: |
+          VERSION="${{ github.ref_name }}"
+          STAGING="zero-relay-panel-${VERSION}"
+          mkdir -p "$STAGING"
+
+          cp -r packages/server/dist           "$STAGING/server-dist"
+          cp -r packages/shared/dist           "$STAGING/shared-dist"
+          cp -r packages/web/dist              "$STAGING/web-dist"
+
+          cp package.json pnpm-workspace.yaml pnpm-lock.yaml tsconfig.base.json "$STAGING/"
+          cp LICENSE README.md "$STAGING/"
+          cp -r docs "$STAGING/"
+
+          cat > "$STAGING/install.sh" << 'INSTALL_EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          VERSION=""
+          BINARY_NAME="zero-relay-panel"
+
+          echo "=== Zero Relay Panel Installer ==="
+
+          NODE_VERSION=$(node --version 2>/dev/null || true)
+          if [ -z "$NODE_VERSION" ]; then
+            echo "Error: Node.js >= 20 is required but not found."
+            exit 1
+          fi
+          echo "Node.js: $NODE_VERSION"
+
+          if ! command -v pnpm &>/dev/null; then
+            echo "Installing pnpm..."
+            npm install -g pnpm@10
+          fi
+
+          INSTALL_DIR="${INSTALL_DIR:-/opt/zero-relay-panel}"
+          echo "Installing to $INSTALL_DIR"
+
+          mkdir -p "$INSTALL_DIR"
+          cp -r . "$INSTALL_DIR/"
+
+          cd "$INSTALL_DIR"
+
+          mkdir -p packages/server/dist
+          mkdir -p packages/shared/dist
+          mkdir -p packages/web/dist
+
+          cp -r server-dist/* packages/server/dist/
+          cp -r shared-dist/* packages/shared/dist/
+          cp -r web-dist/* packages/web/dist/
+
+          rm -rf server-dist shared-dist web-dist
+
+          pnpm install --prod --frozen-lockfile 2>/dev/null || pnpm install --prod
+
+          cat > /etc/systemd/system/zero-relay-panel.service << EOF
+          [Unit]
+          Description=Zero Relay Panel
+          After=network.target
+
+          [Service]
+          Type=simple
+          User=root
+          WorkingDirectory=$INSTALL_DIR/packages/server
+          Environment=NODE_ENV=production
+          Environment=ZERO_PANEL_HOME=/root/.zero-panel
+          Environment=ZERO_WEB_DIR=$INSTALL_DIR/packages/web/dist
+          ExecStart=$(which node) dist/index.js
+          Restart=on-failure
+          RestartSec=5
+
+          [Install]
+          WantedBy=multi-user.target
+          EOF
+
+          systemctl daemon-reload
+          systemctl enable zero-relay-panel
+          systemctl restart zero-relay-panel
+
+          echo ""
+          echo "=== Installation complete ==="
+          echo "Panel: http://<your-ip>:8080"
+          echo "Config: /root/.zero-panel/"
+          echo "Logs:  journalctl -u zero-relay-panel -f"
+          echo ""
+          echo "IMPORTANT: Check the initial password:"
+          echo "  journalctl -u zero-relay-panel | head -20"
+          INSTALL_EOF
+          chmod +x "$STAGING/install.sh"
+
+          tar -czf "${STAGING}.tar.gz" "$STAGING"
+          rm -rf "$STAGING"
+
+          echo "Packaged: ${STAGING}.tar.gz"
+          ls -lh "${STAGING}.tar.gz"
+
+      - name: Generate release notes
+        id: notes
+        run: |
+          TAG="${{ github.ref_name }}"
+          PREV_TAG=$(git tag --sort=-creatordate | grep -E '^v[0-9]' | grep -vE '-(rc|beta|alpha|pre|dev)' | head -2 | tail -1)
+
+          {
+            echo "## What's Changed"
+            echo ""
+            if [ -n "$PREV_TAG" ]; then
+              echo "Changes since ${PREV_TAG}:"
+              echo ""
+              echo "\`\`\`"
+              git log "${PREV_TAG}..${TAG}" --pretty=format:"- %s (%h)" --no-merges
+              echo ""
+              echo "\`\`\`"
+            else
+              echo "Initial release."
+            fi
+            echo ""
+            echo "## Installation"
+            echo ""
+            echo "\`\`\`bash"
+            echo "curl -sL https://github.com/zerodenet/relay/releases/download/${TAG}/zero-relay-panel-${TAG}.tar.gz | tar xz"
+            echo "cd zero-relay-panel-${TAG}"
+            echo "sudo bash install.sh"
+            echo "\`\`\`"
+            echo ""
+            echo "## Quick Start"
+            echo ""
+            echo "1. Open http://\<server-ip\>:8080"
+            echo "2. Check initial password: \`journalctl -u zero-relay-panel | head -20\`"
+            echo "3. Install [Zero kernel](https://github.com/zerodenet/zero) and configure in Settings"
+            echo "4. Add subscription → Create tunnel → Add forward → Apply config"
+          } > release_notes.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          body_path: release_notes.md
+          prerelease: ${{ steps.prerelease.outputs.is_prerelease == 'true' }}
+          make_latest: ${{ steps.prerelease.outputs.is_prerelease == 'false' }}
+          files: |
+            zero-relay-panel-${{ github.ref_name }}.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
