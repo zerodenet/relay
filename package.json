@@ -22,7 +22,6 @@
     "build": "pnpm -r --filter \"./packages/*\" run build",
     "start": "pnpm --filter @zero-panel/server start",
     "typecheck": "pnpm -r --filter \"./packages/*\" run typecheck",
-    "lint": "pnpm -r --filter \"./packages/*\" run lint",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },

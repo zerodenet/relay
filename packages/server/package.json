@@ -2,6 +2,18 @@
   "name": "@zero-panel/server",
   "version": "0.0.1",
   "private": true,
+  "description": "Zero Relay Panel — Node BFF (Fastify).",
+  "author": "zerodenet (https://zerodenet.org)",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/zerodenet/relay.git",
+    "directory": "packages/server"
+  },
+  "homepage": "https://github.com/zerodenet/relay#readme",
+  "bugs": {
+    "url": "https://github.com/zerodenet/relay/issues"
+  },
   "type": "module",
   "main": "./src/index.ts",
   "scripts": {

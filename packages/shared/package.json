@@ -2,6 +2,18 @@
   "name": "@zero-panel/shared",
   "version": "0.0.1",
   "private": true,
+  "description": "Zero Relay Panel — shared zod schemas and types.",
+  "author": "zerodenet (https://zerodenet.org)",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/zerodenet/relay.git",
+    "directory": "packages/shared"
+  },
+  "homepage": "https://github.com/zerodenet/relay#readme",
+  "bugs": {
+    "url": "https://github.com/zerodenet/relay/issues"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

@@ -2,6 +2,18 @@
   "name": "@zero-panel/web",
   "version": "0.0.1",
   "private": true,
+  "description": "Zero Relay Panel — Vue 3 SPA (Naive UI).",
+  "author": "zerodenet (https://zerodenet.org)",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/zerodenet/relay.git",
+    "directory": "packages/web"
+  },
+  "homepage": "https://github.com/zerodenet/relay#readme",
+  "bugs": {
+    "url": "https://github.com/zerodenet/relay/issues"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",
